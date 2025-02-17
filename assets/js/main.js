@@ -5,7 +5,7 @@
     var dojo = []; //ennemis ajoutés au dojo
     var currentChar = null; // perso selectionné pour le round
     var wl = [2,0]; // 0-1-2, 1er rounds joueur, 2e rounds cpu
-    var currentTurn = 1; // pour les probas du cpu
+    var currentTurn = 0; // pour les probas du cpu
     var newDraw = null;
     var fightPlayerHP = 0;
     var fightPlayerMaxHP = 0;
@@ -131,7 +131,7 @@
         getData();
     });
 
-    function deleteCookies(){
+    function deleteCookies(){ // supprime les cookies générés à la victoire
         var date = new Date();
         date.setTime(date.getTime() - 1);
         document.cookie = "hasWon=; expires=" + date.toUTCString() + "; path=/";
@@ -139,7 +139,7 @@
         hideShow('.jsDeleteCookies', null);
     }
 
-    function getData(){ // recupère les données des persos, des ennemis, et des textes
+    async function getData(){ // recupère les données des persos et des ennemis + check cookies victoire
         var ca = document.cookie.split(';');
         for(var i=0;i < ca.length;i++) {
             var c = ca[i];
@@ -149,14 +149,9 @@
                 hideShow(null, '.jsDeleteCookies');
             }else if(c.indexOf("isHof=") == 0){
                 isHof = true;
-                $('.rules__char:not(.rules__char--foe)').addClass('rules__char--hof');
                 hideShow(null, '.jsDeleteCookies');
             }
         }
-        fetchData();
-    }
-
-    async function fetchData(){
         const fetchChars = await fetch('https://verduwilliam.github.io/WttD/assets/json/characters.json');
         const fetchFoes = await fetch('https://verduwilliam.github.io/WttD/assets/json/foes.json');
         const resultChars = await fetchChars.json();
@@ -318,7 +313,7 @@
     function initRound(){ // nouvelle manche
         deck = [];
         dojo = [];
-        currentTurn = 1;
+        currentTurn = 0;
         foes.forEach(foe => {
             if(Number.isInteger(foe.nb) && foe.nb>0){
                 for(let i = 0; i<foe.nb; i++){
@@ -421,7 +416,7 @@
         $('.selectChar__card').removeClass('selectChar__card--selected');
         hideShow('.splash, .drawPhase, .selectChar__card, .fight__round, .fight__ui, .fight__btns, .fight__imgs', '.selectChar, .fight');
         let i = 1;
-        let intervalSelect = setInterval(()=>{
+        let intervalSelect = setInterval(()=>{ // fait apparaitre les persos 1 par 1
             if(i<=$('.selectChar__card').length){
                 hideShow(null, '.selectChar__card:nth-child('+i+')');
             }else{
@@ -435,9 +430,9 @@
         let id = $(this).data('id');
         currentChar = chars[id];
         initRound();
-        $('.selectChar__card[data-id='+id+']').addClass('selectChar__card--selected');
+        $(this).addClass('selectChar__card--selected');
         let i = 1;
-        let intervalSelect = setInterval(()=>{
+        let intervalSelect = setInterval(()=>{ // fait disparaitre les persos 1 par 1
             if(i<=$('.selectChar__card').length){
                 hideShow('.selectChar__card:nth-child('+i+')', null);
             }else{
@@ -456,7 +451,7 @@
             <div class="drawPhase__card__name">`+newDraw.name+`</div>
             <div class="drawPhase__card__pwr">`+newDraw.power+`</div>
         `;
-        $('.drawPhase__card__side:not(.jsIgnore)').html(htmlCard);
+        $('.drawPhase__card__side:not(.jsIgnore)').html(htmlCard); // ne pas réécrire les cartes de la phase du choix à ignorer
         $('.drawPhase__card').addClass('drawPhase__card--selected');
         hideShow('.drawPhase__pass', '.drawPhase__infos');
         deck.splice(0, 1);
@@ -470,7 +465,7 @@
         cpuTurn();
     }
 
-    function goToSacrEqpmt(){ // possibilité sacr eqpmt
+    function goToSacrEqpmt(){ // choix de sacr eqpmt
         $('.drawPhase__perks').addClass('drawPhase__perks--select');
     }
 
@@ -487,63 +482,77 @@
         // 3 possibilités
         // (1) pioche et ajoute au dojo
         // (2) pioche et sacr eqpmt
-        // (3) passe son tour (le joueur passe au combat)
-        animTextCPU('think');
-        $('.drawPhase__perks').removeClass('drawPhase__perks--select');
-        hideShow('.drawPhase__infos', null);
-        let fightStart = false;
-        let rd = Math.floor(Math.random()*100); // 1-99
-        newDraw = deck[0];
-        deck.splice(0, 1);
-        setTimeout(()=>{
-            $('.drawPhase__card').removeClass('drawPhase__card--selected');
-            $('.jsDraw').removeClass('disabled');
-            hideShow(null, '.drawPhase__pass');
-            if(rd<(currentTurn*odds[diff][0]) && dojo.length>0){
-                // passe (3)
-                animTextCPU('retire');
-                fightStart = true;
-            }else if(rd>(currentTurn*odds[diff][1]) && nbRemainingPerks>0){
-                // sacr eqpmt (2)
-                nbRemainingPerks--;
-                let i = Math.floor(Math.random() * 6);
-                while(currentChar.perks[i].actv == false){
-                    i = Math.floor(Math.random() * 6);
-                }
-                currentChar.perks[i].actv = false;
-                $('.drawPhase__perks .perk[data-id='+i+']').addClass('perk--ko');
-                $('.drawPhase__perks .perk[data-id='+i+']').removeClass('jsSacrEqpmt');
-                animTextCPU('sacrifice');
-            }else{
-                // ajout dojo (1)
-                animTextCPU('add');
-                dojo.push(newDraw);
-            }
-            // check si on peut encore sacr eqpmt
-            if(nbRemainingPerks<=0){
-                $('.jsGoToSacrEqpmt').addClass('disabled');
-            }
+        // (3) passe son tour (le joueur commence le combat)
+
+        let fightStart = false; // check si ordi passe
+        for(let i = 0; i <= diff; i++){ // 1 tour si facile, 2 tours si difficile
+            currentTurn++;
             setTimeout(()=>{
-                if(!fightStart){
-                    currentTurn++;
-                    updateInfosDeck();
-                    if(deck.length>0){
-                        // tour du joueur
-                        hideShow('.splash--cpu', '.drawPhase');
-                    }else{
-                        // si deck vide, debut du combat
-                        animTextCPU('nodeck');
-                        setTimeout(initStartFight, 2500);
-                    }
-                }else{
-                    initStartFight();
+                if(!fightStart){  // si passé au 1er tour, skip le 2e
+                    animTextCPU('think');
+                    $('.drawPhase__perks').removeClass('drawPhase__perks--select');
+                    hideShow('.drawPhase__infos', null);
+                    let rd = Math.floor(Math.random()*100); // 1-99
+                    newDraw = deck[0];
+                    deck.splice(0, 1);
+                    setTimeout(()=>{
+                        $('.drawPhase__card').removeClass('drawPhase__card--selected');
+                        $('.jsDraw').removeClass('disabled');
+                        hideShow(null, '.drawPhase__pass');
+                        if(rd<(currentTurn*odds[diff][0]) && dojo.length>0){
+                            // passe (3)
+                            animTextCPU('retire');
+                            fightStart = true;
+                        }else if(rd>(currentTurn*odds[diff][1]) && nbRemainingPerks>0){
+                            // sacr eqpmt (2)
+                            nbRemainingPerks--;
+                            let i = Math.floor(Math.random() * 6);
+                            while(currentChar.perks[i].actv == false){
+                                i = Math.floor(Math.random() * 6);
+                            }
+                            currentChar.perks[i].actv = false;
+                            $('.drawPhase__perks .perk[data-id='+i+']').addClass('perk--ko');
+                            $('.drawPhase__perks .perk[data-id='+i+']').removeClass('jsSacrEqpmt');
+                            animTextCPU('sacrifice');
+                        }else{
+                            // ajout dojo (1)
+                            animTextCPU('add');
+                            dojo.push(newDraw);
+                        }
+                        // check si on peut encore sacr eqpmt
+                        if(nbRemainingPerks<=0){
+                            $('.jsGoToSacrEqpmt').addClass('disabled');
+                        }
+                    }, 1500)
                 }
-            }, 2500)
-        }, 1500)
+            }, i*2500)
+        }
+
+        let waitTime = (1+diff)*2500;
+        setTimeout(()=>{
+            if(!fightStart){
+                updateInfosDeck();
+                if(deck.length>0){
+                    // tour du joueur
+                    hideShow('.splash--cpu', '.drawPhase');
+                }else{
+                    // si deck vide, debut du combat
+                    animTextCPU('nodeck');
+                    setTimeout(initStartFight, 2500);
+                }
+            }else{
+                initStartFight();
+            }
+        }, waitTime)
+
+
+
     }
 
     function initStartFight(){ // debut combat
         hideShow('.splash, .jsTagTeam', null);
+
+        dojo.sort(() => 0.5 - Math.random()); // melange le dojo
 
         // affichage round actuel
         if( (wl[0]+wl[1]) <= 1 ){
@@ -552,17 +561,15 @@
             $('.fight__round').html('<div>Final</div><div>Round</div>');
         }
 
-        dojo.sort(() => 0.5 - Math.random()); // melange le dojo
-
         // verifs perks
-        fightPlayerHP = Number(currentChar.basehp);
+        fightPlayerHP = parseInt(currentChar.basehp);
         fightPlayerPerks = [];
         let checkIfPopupIgnore = false;
         currentChar.perks.forEach(child => {
             if(child.actv){
                 if(child.effect=='hp'){
                     // augmentation pv joueur
-                    fightPlayerHP += Number(child.effect_val);
+                    fightPlayerHP += parseInt(child.effect_val);
                 }else if(child.effect=='ignoreChoiceBefore'){
                     // popup pour choisir l'ennemi à ignorer pour cette manche
                     checkIfPopupIgnore = true;
@@ -581,7 +588,8 @@
         }     
     }
 
-    function startFight(){
+    function startFight(){  // affichage debut du combat
+        // affichage perks utilisables pour ce round
         fightPlayerPerks.forEach(child=>{
             let htmlPerks = `
                 <div class="perk perk--fight">
@@ -613,7 +621,7 @@
         }, 500)
     }
 
-    function choiceIgnore(){
+    function choiceIgnore(){  // choisis l'ennemi ignoré par le perk 'ignoreChoiceBefore'
         hideShow('.splash--ignore', null);
         let selectedName = $(this).data('name');
         let selectedPower = $(this).data('pwr');
@@ -635,7 +643,7 @@
     function newFoe(){ // UI ennemis
         fightUI(null, '100%');
         hideShow(null, '.fight__ui--p2, .fight__img--p2');
-        setTimeout(fightUiPerks, 500);
+        setTimeout(fightUiPerks, 400);
     }
 
     function fightUI(p1, p2){ // barre de vie/nom/image
@@ -650,6 +658,7 @@
         $('.fight__ui--p2 .fight__ui__name').html(dojo[0].name);
         $('.fight__img--p2').attr('src', './assets/img/chars/'+dojo[0].img);
 
+        // pour la taille de la fenetre ennemi en mobile
         let newHeight = 120 + $('.fight__ui--p2 .fight__ui__name').outerHeight();
         let newTop = 90 + $('.fight__ui--p2 .fight__ui__name').outerHeight();
         $('.fight__ui--p2 .fight__ui__border').css('--mobHeight', newHeight+'px');
@@ -673,17 +682,17 @@
                 $('.fight__ui__perks .perk').eq(i).removeClass('perk--available');
                 $('.fight__ui__perks .perk').eq(i).addClass('perk--unavailable perk--ko');
 
-            }else if(
+            }else if(  // utilisable sur ennemi
                 ( child.effect == 'ignore' && child.effect_val.includes(dojo[0].power) ) ||
                 ( child.effect == 'ignoreHeal' && child.effect_val.includes(dojo[0].power) )
-            ){ // utilisable sur ennemi
+            ){ 
                 checkIfSkip = true;
                 $('.fight__ui__perks .perk').eq(i).removeClass('perk--unavailable perk--ko');
                 $('.fight__ui__perks .perk').eq(i).addClass('perk--available');
 
-            }else if(
+            }else if(  // utilisable sur ennemi
                 ( child.effect == 'rez' && dojo[0].power >= fightPlayerHP )
-            ){ // utilisable sur ennemi
+            ){ 
                 iRez = i;
                 $('.fight__ui__perks .perk').eq(i).removeClass('perk--available perk--ko');
                 $('.fight__ui__perks .perk').eq(i).addClass('perk--unavailable');
@@ -710,7 +719,7 @@
         }
     }
 
-    function fightGo(e){ // combat
+    function fightGo(e){ // combat avec un ennemi
         let i = 0;
         let skipped = false;
         let tagteam = e.data.tagteam;
@@ -725,7 +734,7 @@
                 !tagteam && fightPlayerPerks[i].actv && (
                 ( fightPlayerPerks[i].effect == 'ignoreHeal' && fightPlayerPerks[i].effect_val.includes(dojo[0].power) )
             )){
-                fightPlayerHP += Number(dojo[0].power);
+                fightPlayerHP += parseInt(dojo[0].power);
                 if(fightPlayerMaxHP < fightPlayerHP){
                     fightPlayerMaxHP = fightPlayerHP;
                 }
@@ -742,7 +751,7 @@
                 ( fightPlayerPerks[i].effect == 'rez' && dojo[0].power >= fightPlayerHP )
             )){
                 fightPlayerPerks[i].actv = false; fightUiPerks();
-                fightPlayerHP = Number(fightPlayerPerks[i].effect_val);
+                fightPlayerHP = parseInt(fightPlayerPerks[i].effect_val);
                 skipped = true;
             }
             i++;
@@ -780,7 +789,7 @@
     }
 
     function popupIgnore(){
-        // cache les options déjà ignorées
+        // cache les ennemis déjà ignorés par les autres perks
         hideShow(null, '.drawPhase__card__side.jsIgnore', null);
         fightPlayerPerks.forEach(child=>{
             if(child.effect=='ignore' || child.effect=='ignoreHeal'){
@@ -797,7 +806,7 @@
         $('.splash--round .pixText').html('');
     }
 
-    function animHome(){
+    function animHome(){ // home : apparition persos + titres + btns
         for(let i = 0; i<=6; i++){
             if(i<6){
                 setTimeout(()=>{
@@ -811,7 +820,7 @@
         }
     }
 
-    function animTextCPU(val){
+    function animTextCPU(val){ // cpu : texte lettre par lettre
         let img = val;
         if(val=='nodeck'){
             img = 'retire';
@@ -833,7 +842,7 @@
         }, 17);
     }
 
-    function animText(){
+    function animText(){  // après animations histoire : texte lettre par lettre
         var newTextSplash = "";
         var newTextSplashBuffer = "";
         var selector = '.splash--round--'+wl[0]+' .pixText';
@@ -841,28 +850,34 @@
         let i = 0; // index du paragraphe
         let j = 0; // index du caractere
         let intervalText = setInterval(()=>{
-            if( j < txt.splash[wl[0]][i].text.length ){
+
+            if( j < txt.splash[wl[0]][i].text.length ){  // continuer texte
                 newTextSplash = newTextSplashBuffer + '<'+txt.splash[wl[0]][i].tag+'>' + txt.splash[wl[0]][i].text.substring(0,j) + '</'+txt.splash[wl[0]][i].tag+'>';
                 $(selector).html(newTextSplash);
                 j++;
-            }else{
+
+            }else{  // dernier caractère du paragraphe
                 let tmpTxt = txt.splash[wl[0]][i].text;
-                if(txt.splash[wl[0]][i].special.length){
+                if(txt.splash[wl[0]][i].special.length){  // remplace lien/gras/italique/etc
                     txt.splash[wl[0]][i].special.forEach(child => {
                         tmpTxt = tmpTxt.replaceAll(child.original, child.replace);
                     });
                 }
                 newTextSplashBuffer = newTextSplashBuffer + '<'+txt.splash[wl[0]][i].tag+'>' + tmpTxt + '</'+txt.splash[wl[0]][i].tag+'>';
                 $(selector).html(newTextSplashBuffer);
-                if(i<txt.splash[wl[0]].length-1){
+
+                
+                if(i<txt.splash[wl[0]].length-1){ // paragraphe suivant
                     i++;
                     j = 0;
-                }else if(wl[0]<2){
+
+                }else if(wl[0]<2){  // fin dernier paragraphe - round suivant
                     setTimeout(()=>{
                         $(selector).append('<button class="btn btn--orange jsGoToSelectChar">Go!</button>');
                     }, 1000)
                     clearInterval(intervalText);
-                }else{
+
+                }else{  // fin dernier paragraphe - fin du jeu
                     setTimeout(()=>{
                         $(selector).append('<button class="btn btn--blue jsMenu">Retour au menu</button>');
                     }, 1000)
@@ -872,12 +887,14 @@
         }, 12);
     }
 
-    function animRound(){
+    function animRound(){  // animations histoire
         resetSplash();
         hideShow('.home, .home > *, .rules, .splash, .fight__round, .fight__ui, .fight__btns, .fight__imgs', '.splash--round--'+wl[0]);
-        let totalTime = 0;
-        let delay = 0;
-        let stepDuration = 0;
+        
+        let totalTime = 0; // tps total avant l'étape
+        let stepDuration = 0; // durée de l'étape
+        let delay = 0; // delai avant l'apparition d'une image dans son étape
+
         $('.splash--round--'+wl[0]+' .splash--round__step').each(function(){
             stepDuration = 0;
             setTimeout(()=>{
@@ -895,14 +912,15 @@
             })
             totalTime += stepDuration;
         })
+        
         totalTime += 500;
-        setTimeout(()=>{
-            hideShow('.fight__img', null);
+        setTimeout(()=>{ // après que toutes les étapes soit terminées, affichage du texte
+            hideShow('.fight__img', null); // ajout de hidden mtn pour éviter de déclencher l'animation ko sur le perso gagnant
             animText();
         }, totalTime)
     }
 
-    function animWin(){
+    function animWin(){  // animations histoire - fin
         hasWon = true;
         var date = new Date();
         date.setTime(date.getTime() + (15*24*60*60*1000));
@@ -915,12 +933,12 @@
         resetSplash();
         hideShow('.home, .home > *, .rules, .splash, .fight, .fight__round, .fight__ui, .fight__btns, .fight__imgs', '.splash--round--2, .jsDeleteCookies');
         setTimeout(()=>{
-            hideShow('.fight__img');
+            hideShow('.fight__img'); // ajout de hidden mtn pour éviter de déclencher l'animation ko sur le perso gagnant
             animText();
         }, 3000)
     }
 
-    function rulesShow(e){
+    function rulesShow(e){  // afficher/masquer la popup des regles
         if(e.data.show){
             $('.rules').scrollTop(0);
             hideShow(null, '.rules');
@@ -929,12 +947,12 @@
         }
     }
 
-    function goBackHome(){
+    function goBackHome(){  // retour au menu
         hideShow('.rules, .splash, .selectChar, .drawPhase, .fight, .home > *', '.home');
         animHome();
     }
 
-    function hideShow(hide, show){ // 2x str '.maClasse1, .maClasse2'
+    function hideShow(hide, show){ // fn raccourci pour ajouter/enlever la classe 'hidden' - args : str (selecteur jquery)
         if(hide){
             $(hide).addClass('hidden');
         }
